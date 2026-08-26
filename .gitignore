@@ -1,0 +1,14 @@
+# Corpus output - published as release assets, never committed
+*.jsonl
+*.jsonl.gz
+*.zip
+dist/
+
+# Local scratch
+cache/
+cache_v2/
+.venv/
+.idea/
+__pycache__/
+FFXI_INSTANCES.md
+.claude/settings.local.json

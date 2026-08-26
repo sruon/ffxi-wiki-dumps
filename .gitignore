@@ -1,0 +1,12 @@
+# Corpus output - published as release assets, never committed
+*.jsonl
+*.jsonl.gz
+*.zip
+dist/
+
+# Local scratch
+.venv/
+.idea/
+__pycache__/
+.claude/settings.local.json
+SKILL_BRIEF.md

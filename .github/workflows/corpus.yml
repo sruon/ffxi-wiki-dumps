@@ -1,0 +1,78 @@
+name: corpus
+
+on:
+  schedule:
+    # 1st and 15th at 04:17 UTC - roughly every two weeks, off the hour so we
+    # are not in the crowd hammering these community wikis.
+    - cron: "17 4 1,15 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: corpus
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 340
+    strategy:
+      # One source failing means no release, so don't burn the others.
+      fail-fast: true
+      matrix:
+        include:
+          # BG Wiki sits behind a Cloudflare challenge that blocks datacenter
+          # IPs, so this one has to run from a self-hosted runner on a
+          # residential connection. The other two are fine on GitHub's.
+          - source: bg
+            runner: [self-hosted, bg-scrape]
+            cmd: python scrape_mediawiki.py bg --out-dir dist
+          - source: ffxiclopedia
+            runner: ubuntu-latest
+            cmd: python scrape_mediawiki.py ffxiclopedia --out-dir dist
+          - source: ffo
+            runner: ubuntu-latest
+            cmd: python scrape_ffo.py -o dist/ffo-wiki.jsonl
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python test_scrapers.py
+      - run: mkdir -p dist && ${{ matrix.cmd }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dump-${{ matrix.source }}
+          path: dist/*.jsonl
+          retention-days: 3
+
+  release:
+    needs: scrape
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: dump-*
+          merge-multiple: true
+
+      - name: Compress, checksum, write release notes
+        run: python3 package.py dist
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          tag=$(date -u +%Y.%m.%d)
+          if gh release view "$tag" >/dev/null 2>&1; then
+            tag="$tag-${{ github.run_number }}"
+          fi
+          gh release create "$tag" dist/* --title "Corpus $tag" --notes-file notes.md
